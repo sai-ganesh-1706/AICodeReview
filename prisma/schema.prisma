@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  githubId     Int          @unique
+  login        String
+  avatarUrl    String
+  accessToken  String
+  createdAt    DateTime     @default(now())
+  repositories Repository[]
+
+  @@map("users")
+}
+
+model Repository {
+  id              String   @id @default(cuid())
+  userId          String
+  repoFullName    String   // e.g. "owner/repo"
+  installationId  Int?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews Review[]
+
+  @@unique([userId, repoFullName])
+  @@map("repositories")
+}
+
+model Review {
+  id          String          @id @default(cuid())
+  repoId      String
+  prNumber    Int
+  prTitle     String
+  prUrl       String
+  summary     String          @db.Text
+  score       Int
+  rawResponse Json
+  createdAt   DateTime        @default(now())
+
+  repository Repository      @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  comments   ReviewComment[]
+
+  @@map("reviews")
+}
+
+model ReviewComment {
+  id         String   @id @default(cuid())
+  reviewId   String
+  filePath   String
+  lineNumber Int
+  severity   Severity
+  comment    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_comments")
+}
+
+enum Severity {
+  CRITICAL
+  WARNING
+  SUGGESTION
+}
