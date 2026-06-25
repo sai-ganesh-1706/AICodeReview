@@ -56,7 +56,7 @@ if (!appId || !privateKey) {
     keyStart: privateKey.slice(0, 30),
     keyEnd: privateKey.slice(-30),
   });
-
+  
   return new Octokit({
   authStrategy: createAppAuth,
   auth: {
@@ -98,69 +98,42 @@ export async function getPRFiles(
 ): Promise<{ files: PRFile[]; truncated: boolean }> {
   const octokit = createInstallationOctokit(installationId);
 
-  console.log("========== getPRFiles ==========");
-  console.log({
-    installationId,
+  const { data } = await octokit.pulls.listFiles({
     owner,
     repo,
-    prNumber,
+    pull_number: prNumber,
+    per_page: 100,
   });
 
-  try {
-    const { data } = await octokit.pulls.listFiles({
-      owner,
-      repo,
-      pull_number: prNumber,
-      per_page: 100,
-    });
+  // Filter out files without patches, binary files, and lockfiles
+  const filtered = data.filter((file) => {
+    if (!file.patch) return false;
+    if (IGNORED_FILE_PATTERNS.some((p) => p.test(file.filename))) return false;
+    return true;
+  });
 
-    console.log(`Successfully fetched ${data.length} PR files`);
+  // Cap total patch length at MAX_TOTAL_PATCH_LENGTH
+  const result: PRFile[] = [];
+  let totalLength = 0;
+  let truncated = false;
 
-    // Filter out files without patches, binary files, and lockfiles
-    const filtered = data.filter((file) => {
-      if (!file.patch) return false;
-      if (IGNORED_FILE_PATTERNS.some((p) => p.test(file.filename)))
-        return false;
-      return true;
-    });
-
-    // Cap total patch length at MAX_TOTAL_PATCH_LENGTH
-    const result: PRFile[] = [];
-    let totalLength = 0;
-    let truncated = false;
-
-    for (const file of filtered) {
-      const patch = file.patch!;
-      if (totalLength + patch.length > MAX_TOTAL_PATCH_LENGTH) {
-        truncated = true;
-        break;
-      }
-
-      totalLength += patch.length;
-
-      result.push({
-        filename: file.filename,
-        status: file.status,
-        additions: file.additions,
-        deletions: file.deletions,
-        patch,
-      });
+  for (const file of filtered) {
+    const patch = file.patch!;
+    if (totalLength + patch.length > MAX_TOTAL_PATCH_LENGTH) {
+      truncated = true;
+      break;
     }
-
-    console.log(
-      `Returning ${result.length} reviewable files (truncated=${truncated})`
-    );
-
-    return { files: result, truncated };
-  } catch (error: any) {
-    console.error("========== GitHub API Error ==========");
-    console.error("Status:", error.status);
-    console.error("Message:", error.message);
-    console.error("Response:", error.response?.data);
-    console.error("Full Error:", error);
-
-    throw error;
+    totalLength += patch.length;
+    result.push({
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      patch,
+    });
   }
+
+  return { files: result, truncated };
 }
 
 // ---------------------------------------------------------------------------
