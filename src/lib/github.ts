@@ -39,32 +39,41 @@ export function createUserOctokit(accessToken: string): Octokit {
 
 /**
  * Create an Octokit instance authenticated as a GitHub App installation.
- * The private key is stored as base64 in GITHUB_PRIVATE_KEY and decoded here.
+ * The private key is stored with escaped \n characters in GITHUB_PRIVATE_KEY.
  */
-function createInstallationOctokit(installationId: number): Octokit {
+async function createInstallationOctokit(installationId: number): Promise<Octokit> {
   const appId = process.env.GITHUB_APP_ID;
-const privateKey = process.env.GITHUB_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const privateKey = process.env.GITHUB_PRIVATE_KEY
+    ?.replace(/\\n/g, "\n")
+    .trim();
 
-if (!appId || !privateKey) {
-  throw new Error(
-    "GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set in environment variables"
-  );
-}
-  // Temporary debug logs
-  console.log({
-    appId,
-    keyStart: privateKey.slice(0, 30),
-    keyEnd: privateKey.slice(-30),
-  });
-  
-  return new Octokit({
-  authStrategy: createAppAuth,
-  auth: {
-    appId: Number(appId),
-    privateKey,
-    installationId,
-  },
-});
+  if (!appId || !privateKey) {
+    throw new Error(
+      "GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set in environment variables"
+    );
+  }
+
+  console.log("Key line count:", privateKey.split("\n").length);
+  console.log("Has real newlines:", privateKey.includes("\n"));
+
+  try {
+    const octokit = new Octokit({
+      authStrategy: createAppAuth,
+      auth: {
+        appId: Number(appId),
+        privateKey,
+        installationId,
+      },
+    });
+
+    await octokit.auth({ type: "installation" });
+    console.log("[ReviewAI] Auth success ✅");
+    return octokit;
+
+  } catch (err: any) {
+    console.error("[ReviewAI] Auth FAILED ❌:", err.message);
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +105,7 @@ export async function getPRFiles(
   repo: string,
   prNumber: number
 ): Promise<{ files: PRFile[]; truncated: boolean }> {
-  const octokit = createInstallationOctokit(installationId);
+  const octokit = await createInstallationOctokit(installationId); // ✅ fixed: await added
 
   const { data } = await octokit.pulls.listFiles({
     owner,
@@ -172,7 +181,6 @@ export function parsePatchPositions(patch: string): Map<number, number> {
 
     if (line.startsWith("-")) {
       // Deletion: exists only on the old side. Don't increment newLine.
-      // Position still increments (already done above).
       continue;
     }
 
@@ -219,7 +227,7 @@ export function buildDiffPositionMap(files: PRFile[]): DiffPositionMap {
  *    10:  import { Octokit } from "@octokit/rest";
  *    11:  import { createAppAuth } from "@octokit/auth-app";
  *   +12:  import { foo } from "bar";
- *    13:  
+ *    13:
  */
 export function buildAnnotatedDiff(files: PRFile[]): string {
   const parts: string[] = [];
@@ -286,7 +294,7 @@ export async function postReviewComments(
   score: number,
   positionMap: DiffPositionMap
 ): Promise<void> {
-  const octokit = createInstallationOctokit(installationId);
+  const octokit = await createInstallationOctokit(installationId); // ✅ fixed: await added
 
   const severityEmoji: Record<string, string> = {
     CRITICAL: "🔴",
