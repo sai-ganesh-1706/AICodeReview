@@ -43,24 +43,28 @@ export function createUserOctokit(accessToken: string): Octokit {
  */
 function createInstallationOctokit(installationId: number): Octokit {
   const appId = process.env.GITHUB_APP_ID;
-  const privateKeyBase64 = process.env.GITHUB_PRIVATE_KEY;
+const privateKey = process.env.GITHUB_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-  if (!appId || !privateKeyBase64) {
-    throw new Error(
-      "GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set in environment variables"
-    );
-  }
-
-  const privateKey = Buffer.from(privateKeyBase64, "base64").toString();
-
-  return new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId: Number(appId),
-      privateKey,
-      installationId,
-    },
+if (!appId || !privateKey) {
+  throw new Error(
+    "GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set in environment variables"
+  );
+}
+  // Temporary debug logs
+  console.log({
+    appId,
+    keyStart: privateKey.slice(0, 30),
+    keyEnd: privateKey.slice(-30),
   });
+  
+  return new Octokit({
+  authStrategy: createAppAuth,
+  auth: {
+    appId: Number(appId),
+    privateKey,
+    installationId,
+  },
+});
 }
 
 // ---------------------------------------------------------------------------
