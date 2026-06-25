@@ -70,9 +70,9 @@ async function createInstallationOctokit(installationId: number): Promise<Octoki
     console.log("[ReviewAI] Auth success ✅");
     return octokit;
 
-  } catch (err: any) {
-    console.error("[ReviewAI] Auth FAILED ❌:", err.message);
-    throw err;
+  } catch (err: unknown) {
+  console.error("[ReviewAI] Auth FAILED ❌:", err instanceof Error ? err.message : String(err));
+  throw err;
   }
 }
 
