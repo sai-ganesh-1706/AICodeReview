@@ -4,15 +4,13 @@ import type { PullRequestWebhookPayload } from "@/types/review";
 import { prisma } from "@/lib/prisma";
 import { processReview } from "@/lib/reviewProcessor";
 
-// On Vercel Pro plan, this extends the serverless function timeout to 60s.
-// On the free plan background work after res is sent gets killed — use
-// Upstash QStash or a similar queue to run processReview asynchronously.
+// On Vercel Hobby plan, the function runs up to 60s.
+// We now await processReview before returning so Vercel doesn't kill it early.
 export const maxDuration = 60;
 
 /**
  * Verify the X-Hub-Signature-256 header against the raw request body.
  */
-
 function verifySignature(
   payload: string,
   signature: string | null,
@@ -235,8 +233,6 @@ async function handlePullRequest(
   });
 
   // Auto-create if missing — find a user who owns this repo
-  // by matching the repo owner to a known GitHub login, or by
-  // looking up existing repos with the same installationId.
   if (!repository) {
     console.log(
       `[Webhook] Repository ${repoFullName} not in DB — attempting auto-registration`
@@ -300,13 +296,17 @@ async function handlePullRequest(
     );
   }
 
-  // Fire-and-forget — never await slow operations in the webhook handler
-  void processReview(payload).catch((err) => {
+  // ✅ Fixed: await processReview instead of fire-and-forget.
+  // On Vercel Hobby, the function is killed the moment the response is sent,
+  // so fire-and-forget (void) means all async work after the return is lost.
+  try {
+    await processReview(payload);
+  } catch (err) {
     console.error(
       `[Webhook] processReview failed for ${repoFullName}#${payload.pull_request.number}:`,
       err
     );
-  });
+  }
 
   return NextResponse.json({ received: true });
 }
@@ -364,7 +364,6 @@ export async function POST(request: NextRequest) {
     if (payload.action === "created") {
       await handleInstallationCreated(payload);
     }
-    // "deleted" could be handled to deactivate all repos, but not critical
     return NextResponse.json({ received: true });
   }
 
